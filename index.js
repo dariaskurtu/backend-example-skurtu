@@ -26,11 +26,25 @@ app.post("/users", (req, res) => {
         if (!email || !name) {
             return res.status(400).json({ error: "Не хватает данных" })
         }
-        const query = db.prepare(`INSERT INTO users (email, name) VALUES (?, ?)`)
+        const query = db.prepare(
+            `INSERT INTO users (email, name) VALUES (?, ?)`
+        )
         const info = query.run(email, name)
-        const newUser = db.prepare(`SELECT * FROM users WHERE ID = ?`).get(info.lastInsertRowid)
+        const newUser = db
+            .prepare(`SELECT * FROM users WHERE ID = ?`)
+            .get(info.lastInsertRowid)
         res.status(201).json(newUser)
     } catch (error) {}
+})
+
+app.delete("/users/:id", (req, res) => {
+    const { id } = req.params
+    const query = db.prepare(`DELETE FROM users WHERE id = ?`)
+    const result = query.run(id)
+
+    if (result.changes === 0) res.status(404).json({error: "Пользователь не был найден"})
+
+    res.status(200).json({message: "Юзер успешно удален"})
 })
 
 app.listen("3000", () => {
