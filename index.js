@@ -1,9 +1,72 @@
+const bcrypt = require("bcryptjs")
+const jwt = require("jsonwebtoken")
 const db = require("./db")
 const express = require("express")
+
+const salt = "secret-key"
+const SECRET = "this-is-for-jwt"
 
 const app = express()
 
 app.use(express.json())
+
+const authMiddleware = (req, res, next) => {
+    const authheader = req.headers.authorization
+    if (!authheader) res.status(401).json({error:"Нет токена авторизации"})
+    if (!(authheader.split(" ")[1]))res.status(401).json({error: "Неверный формат токена"})
+
+    try {
+        const token = authheader.split(" ")[1]
+        constdecoded = jwt.verify(token, SECRET)
+    } catch(error) {
+        console.error(error)
+    }
+}
+
+app.post("/register", (req, res)=> {
+     const { email, name, password } = req.body
+
+    try {
+        if (!email || !name) {
+            return res.status(400).json({ error: "Не хватает данных" })
+        }
+        const syncSalt = bcrypt.genSaltSync(10)
+        const hashed = bcrypt.hashSync(password, syncSalt)
+        const query = db.prepare(
+            `INSERT INTO users (email, name, password) VALUES (?, ?, ?)`
+        )
+        const info = query.run(email, name, hashed)
+        const newUser = db
+            .prepare(`SELECT * FROM users WHERE ID = ?`)
+            .get(info.lastInsertRowid)
+        res.status(201).json(newUser)
+    } catch (error) {
+        console.error(error)
+    }
+})
+
+app.post("/login", (req, res) => {
+    try{
+    const {email, password} = req.body
+        
+        const user = db.prepare(`SELECT * FROM users WHERE email = ?`).get(email)
+
+        if (!user) res.status(401).json({error: "Неправильные данные"})
+
+        const valid = bcrypt.compareSync(password, user.password)
+
+        if (!valid) res.status(401).json({error: "Неправильные данные"})
+
+        const token = jwt.sign({...user}, SECRET, {expiresIn: '24h'})
+
+        const {password: p, ...response} = user
+        res.status(200).json({token:token, ...response})
+    }
+    
+ catch (error) {
+    console.error(error)
+}
+})
 
 app.get("/", (_, res) => {
     res.send("Hello world")
@@ -14,30 +77,16 @@ app.post("/", (req, res) => {
     res.send("Успех")
 })
 
-app.get("/users", (_, res) => {
+app.get("/users", authMiddleware, (_, res) => {
     const data = db.prepare("SELECT * FROM users").all()
     res.json(data)
 })
 
 app.post("/users", (req, res) => {
-    const { email, name } = req.body
-
-    try {
-        if (!email || !name) {
-            return res.status(400).json({ error: "Не хватает данных" })
-        }
-        const query = db.prepare(
-            `INSERT INTO users (email, name) VALUES (?, ?)`
-        )
-        const info = query.run(email, name)
-        const newUser = db
-            .prepare(`SELECT * FROM users WHERE ID = ?`)
-            .get(info.lastInsertRowid)
-        res.status(201).json(newUser)
-    } catch (error) {}
+   
 })
 
-app.delete("/users/:id", (req, res) => {
+app.delete("/users/:id", authMiddleware, (req, res) => {
     const { id } = req.params
     const query = db.prepare(`DELETE FROM users WHERE id = ?`)
     const result = query.run(id)
@@ -53,7 +102,7 @@ app.get("/todos", (_, res) => {
     res.json(data)
 })
 
-app.delete("/todos", (req, res) => {
+app.delete("/todos", authMiddleware, (req, res) => {
     const { id } = req.params
     const query = db.prepare(`DELETE FROM todos WHERE id = ?`)
     const result = query.run(id)
@@ -84,7 +133,7 @@ app.post("/todos", (req, res) => {
     }
 })
 
-app.delete("/users/:id", (req, res) => {
+app.delete("/users/:id",authMiddleware,(req, res) => {
     const { id } = req.params
     const query = db.prepare(`DELETE FROM users WHERE id = ?`)
     const result = query.run(id)
@@ -95,7 +144,7 @@ app.delete("/users/:id", (req, res) => {
     res.status(200).json({ message: "Юзер успешно удален" })
 })
 
-app.patch("/todos/:id/toggle", (req, res) => {
+app.patch("/todos/:id/toggle", authMiddleware, (req, res) => {
     try {
         const { id } = req.params
         const query = db.prepare(
